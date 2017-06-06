@@ -22,6 +22,16 @@
 #include <algorithm>
 #include <iostream>
 
+//self define
+#include "core/protocol.hpp"
+// #define HRDTTPE 0x0001
+// #define PROTYPE 0x0800
+#define PRO_ADDR_LEN 4
+#define DEFAULT_TTL 64
+#define IPHEADLEN 5
+#define DESTUNREACH_TYPE 3
+#define PORTUNREACH_CODE 3
+
 namespace simple_router {
 
 //////////////////////////////////////////////////////////////////////////
@@ -30,10 +40,103 @@ namespace simple_router {
 void
 ArpCache::periodicCheckArpRequestsAndCacheEntries()
 {
-
+  // std::list<std::shared_ptr<ArpEntry>> m_cacheEntries;
+  for (const auto& arpRequest : m_arpRequests) {
+    handle_arpreq(arpRequest);
+  }
+  for (const auto& entry : m_cacheEntries) {
+    if(!entry->isValid) {
+      //removeCached entry
+      //why need to record and remove together?
+      std::lock_guard<std::mutex> lock(m_mutex);
+      m_cacheEntries.remove(entry);
+    }
+  }
   // FILL THIS IN
 
 }
+
+void ArpCache::handle_arpreq(const std::shared_ptr<ArpRequest>& arpRequest) {
+  printf("handle arpRequest.\n");
+  // time_point current = (time_point)std::chrono::system_clock::now();
+  auto current = steady_clock::now();
+  if((current -  seconds(1)) > arpRequest->timeSent) {
+    if(arpRequest->nTimesSent >= MAX_SENT_TIME) {
+      //create icmp packet unreachable and remove the request from queue
+      //response all packets under the request with unreachable icmp
+      for(const auto& pendingPacket : arpRequest->packets) {
+        Buffer ip_Packet = pendingPacket.packet;
+        struct ip_hdr* packIpHdr = (struct ip_hdr*) (ip_Packet.data() + sizeof(struct ethernet_hdr));
+        struct ethernet_hdr* packEthHdr = (struct ethernet_hdr*) ip_Packet.data();
+        //do not send icmp pack for icmp
+        struct icmp_hdr* icmpHdr = (struct icmp_hdr*)(ip_Packet.data() + sizeof(struct ethernet_hdr) + sizeof(struct ip_hdr));
+        if(packIpHdr->ip_p != ip_protocol_icmp || icmpHdr->icmp_code == 8) {
+          Buffer buf(sizeof(struct icmp_t3_hdr) + sizeof(struct ip_hdr) + sizeof(struct ethernet_hdr));
+          memset(buf.data(), '\0', sizeof(buf));
+          struct ethernet_hdr* ethHdr = (struct ethernet_hdr*) buf.data();
+          struct ip_hdr* ipHdr = (struct ip_hdr*)(buf.data() + sizeof(ethernet_hdr));
+          struct icmp_t3_hdr* icmpHdr = (struct icmp_t3_hdr*) (buf.data() + sizeof(ethernet_hdr) + sizeof(ip_hdr));
+
+
+          //ethernet header filling
+          memcpy(ethHdr->ether_dhost, packEthHdr->ether_shost, ETHER_ADDR_LEN);
+          const Interface* interface = m_router.findIfaceByName(pendingPacket.iface);
+          memcpy(ethHdr->ether_shost, (interface->addr).data(), ETHER_ADDR_LEN);
+          ethHdr->ether_type = ethertype_ip;
+
+          //IP header filling
+          //htons
+          ipHdr->ip_hl = htons(IPHEADLEN);
+          ipHdr->ip_tos = htons(packIpHdr->ip_tos);
+          ipHdr->ip_len = htons(ICMP_DATA_SIZE + sizeof(struct ip_hdr));
+          ipHdr->ip_id = htons(packIpHdr->ip_id);
+          ipHdr->ip_off = htons(packIpHdr->ip_off);
+          ipHdr->ip_ttl = htons(DEFAULT_TTL);
+          ipHdr->ip_p = htons(ip_protocol_icmp);
+          ipHdr->ip_src = htons(interface->ip);
+          ipHdr->ip_dst = htons(packIpHdr->ip_src);
+          ipHdr->ip_sum = 0;
+          ipHdr->ip_sum = htons(cksum((const void*) ipHdr, sizeof(struct ip_hdr)));
+
+          icmpHdr->icmp_type = 3;
+          icmpHdr->icmp_code = 1;
+          memcpy(icmpHdr->data, packIpHdr, ICMP_DATA_SIZE);
+          icmpHdr->icmp_sum = 0;
+          icmpHdr->icmp_sum = cksum((const void*) icmpHdr, sizeof(struct icmp_hdr));
+
+          m_router.sendPacket(buf, interface->name);
+        }
+      }
+      removeRequest(arpRequest);
+    }
+    else {
+      // send arpRequest
+      Buffer buf(sizeof(struct arp_hdr) + sizeof(struct ethernet_hdr));
+      struct arp_hdr* arp = (struct arp_hdr*) (buf.data() + sizeof(struct ethernet_hdr));
+      arp->arp_hrd = htons(arp_hrd_ethernet);
+      arp->arp_pro = htons(ethertype_ip);
+      arp->arp_hln = ETHER_ADDR_LEN;
+      arp->arp_pln = PRO_ADDR_LEN;
+      arp->arp_op = arp_op_request;
+      arp->arp_tip = arpRequest->ip;
+      const RoutingTable& routingTable = m_router.getRoutingTable();
+      struct RoutingTableEntry routingEntry = routingTable.lookup(arpRequest->ip);
+      const Interface* interface = m_router.findIfaceByName(routingEntry.ifName);
+      arp->arp_sip = interface->ip;
+      memcpy(arp->arp_sha, (interface->addr).data(), ETHER_ADDR_LEN); //sender mac address
+
+      struct ethernet_hdr* ethHdr = (struct ethernet_hdr*) (buf.data());
+      memset(ethHdr->ether_shost, 255, ETHER_ADDR_LEN); //ethernet header destination address
+      memcpy(ethHdr->ether_dhost, (interface->addr).data(), ETHER_ADDR_LEN); //ethernet header source address
+      ethHdr->ether_type = htons(ethertype_arp);
+      m_router.sendPacket(buf, interface->name);
+      arpRequest->nTimesSent += 1;
+      arpRequest->timeSent = current;
+    }
+  }
+}
+
+
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
 
