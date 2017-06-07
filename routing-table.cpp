@@ -33,28 +33,29 @@ RoutingTableEntry
 RoutingTable::lookup(uint32_t ip) const
 {
   // FILL THIS IN
-
-  RoutingTabelEntry* max_entry = nullptr;
-  string range = NULL;
-  string dest = NULL;
+  RoutingTableEntry* max_entry = nullptr;
+  std::string range = NULL;
+  std::string dest = NULL;
   uint32_t cur_longest_prefix = 0; 
   uint32_t matched_length = 0; 
   for(auto entry_ptr = m_entries.begin(); entry_ptr != m_entries.end(); ++entry_ptr){
-    range = to_string((*entry_ptr)->dest & (*entry_ptr)->mask);
-    dest = to_string(ip & (*entry_ptr)->mask);
+    range = std::to_string((*entry_ptr).dest & (*entry_ptr).mask);
+    dest = std::to_string(ip & (*entry_ptr).mask);
     auto mypair = mismatch(range.begin(), range.end(), dest.begin());
-    matched_length = std::distance(mypair.first(),range.begin()) 
+    matched_length = std::distance(range.begin(),mypair.first); 
     if(matched_length > cur_longest_prefix) {
       *max_entry = *entry_ptr;
       cur_longest_prefix = matched_length;
     }
-    if(entry_ptr == m_entries.end()-1 && max_entry != nullptr){
-      RoutingTableEntry result;
-      memcpy(&result, &(*max_entry), sizeof(*max_entry));
-      return result;
-    }
   }
-  throw std::runtime_error("Routing entry not found");
+  if(max_entry != nullptr){
+    RoutingTableEntry result;
+    memcpy(&result, &(*max_entry), sizeof(*max_entry));
+    return result;
+  }
+  else{
+    throw std::runtime_error("Routing entry not found");
+  }
 }
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////

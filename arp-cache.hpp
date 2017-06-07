@@ -191,6 +191,8 @@ public:
   void
   clear();
 
+  void
+  handle_arpreq(const std::shared_ptr<ArpRequest>& arpRequest);
 private:
   /**
    * Thread which sweeps through the cache and invalidates entries that were added
