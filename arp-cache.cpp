@@ -117,7 +117,7 @@ void ArpCache::handle_arpreq(const std::shared_ptr<ArpRequest>& arpRequest) {
       arp->arp_pro = htons(ethertype_ip);
       arp->arp_hln = ETHER_ADDR_LEN;
       arp->arp_pln = PRO_ADDR_LEN;
-      arp->arp_op = arp_op_request;
+      arp->arp_op = htons(arp_op_request);
       arp->arp_tip = arpRequest->ip;
       const RoutingTable& routingTable = m_router.getRoutingTable();
       struct RoutingTableEntry routingEntry = routingTable.lookup(arpRequest->ip);
