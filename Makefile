@@ -18,7 +18,7 @@ router: $(CLASSES) core/main.o
 	$(CXX) -o $@ $^ $(LDFLAGS)
 
 clean:
-	rm -rf *.o *~ *.gch *.swp *.dSYM router *.tar.gz pox.hpp pox.cpp build/ *.pyc core/*.o
+	rm -rf *.o *~ *.gch *.swp *.dSYM router *.tar.gz pox.hpp pox.cpp build/ *.pyc core/*.o save/*
 
 dist: tarball
 tarball: clean

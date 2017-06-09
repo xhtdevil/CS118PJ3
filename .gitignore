@@ -5,3 +5,4 @@ router
 *.o
 *.dSYM
 .vagrant
+.file
