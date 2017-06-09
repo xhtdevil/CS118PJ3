@@ -57,7 +57,7 @@ RoutingTable::lookup(uint32_t ip) const
     if(range == dest && (*entry_ptr).mask >= cur_longest_prefix) {
       max_entry = &*entry_ptr;
       cur_longest_prefix = (*entry_ptr).mask;
-      printf("cur_longest_prefix: %d\n", cur_longest_prefix);
+      printf("------>cur_longest_prefix: %d\n", cur_longest_prefix);
       // std::cout << "curLongestprefix : " << matched_length << std::endl;
 
     }
@@ -65,6 +65,7 @@ RoutingTable::lookup(uint32_t ip) const
   if(max_entry != nullptr){
     RoutingTableEntry* result = new RoutingTableEntry();
     memcpy(result, &(*max_entry), sizeof(*max_entry));
+    printf("------>Returning result\n");
     return *result;
   }
   else{
