@@ -58,7 +58,11 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
     struct ip_hdr* packIpHdr = (struct ip_hdr*) (packet.data() + sizeof(struct ethernet_hdr));
     // struct ip_hdr* ipHdr = (struct ip_hdr*) (packet.data() + sizeof(struct ethrnet_hdr));
     //ip checksum
+<<<<<<< HEAD
     // m_arp.insertArpEntry(Buffer(packEthHdr->ether_shost,  packEthHdr->ether_shost + ETHER_ADDR_LEN), packIpHdr->ip_src);
+=======
+    m_arp.insertArpEntry(Buffer(packEthHdr->ether_shost,  packEthHdr->ether_shost + ETHER_ADDR_LEN), packIpHdr->ip_src);
+>>>>>>> 2885416e6254a6a2c79875bf39a2fbdd865d7f0f
     // print_hdr_ip(packet.data() + sizeof(struct ethernet_hdr));
     uint16_t ipChecksum = ntohs(cksum((const void*)packIpHdr, sizeof(struct ip_hdr)));
     if(ipChecksum != 65535) {
@@ -221,9 +225,14 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
           icmpHdr->icmp_code = 0;
           // memcpy(icmpHdr->data, packIpHdr, ICMP_DATA_SIZE);
           icmpHdr->icmp_sum = 0;
+<<<<<<< HEAD
           icmpHdr->icmp_sum = cksum((const void*) icmpHdr, buf.size() - sizeof(struct ethernet_hdr) - sizeof(struct ip_hdr));
           print_hdrs(buf);
           print_hdr_icmp((void * icmpHdr), sizeof(struct icmp_hdr))
+=======
+          icmpHdr->icmp_sum = cksum((const void*) icmpHdr, sizeof(struct icmp_hdr));
+          print_hdrs(buf);
+>>>>>>> 2885416e6254a6a2c79875bf39a2fbdd865d7f0f
           sendPacket(buf, inIface);
         }
         else {
@@ -373,7 +382,10 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
         print_hdrs(buf);
         sendPacket(buf, inIface);
       }
+<<<<<<< HEAD
       // m_arp.remove(arpRequest);
+=======
+>>>>>>> 2885416e6254a6a2c79875bf39a2fbdd865d7f0f
       m_arp.removeRequest(arpRequest);
     }
     else if(ntohs(packArpHdr->arp_op) == arp_op_request) {
@@ -382,7 +394,11 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
       struct ethernet_hdr* packEthHdr = (struct ethernet_hdr*) packet.data();
       struct arp_hdr* packArpHdr = (struct arp_hdr*)(packet.data() + sizeof(ethernet_hdr));
       // print_hdr_arp(packet.data() + sizeof(struct ethernet_hdr));
+<<<<<<< HEAD
       // m_arp.insertArpEntry(Buffer(packEthHdr->ether_shost,  packEthHdr->ether_shost + ETHER_ADDR_LEN), packArpHdr->arp_sip);
+=======
+      m_arp.insertArpEntry(Buffer(packEthHdr->ether_shost,  packEthHdr->ether_shost + ETHER_ADDR_LEN), packArpHdr->arp_sip);
+>>>>>>> 2885416e6254a6a2c79875bf39a2fbdd865d7f0f
       if(findIfaceByName(inIface)->ip == packArpHdr->arp_tip) {
         printf("request mac of router ------------------send arpreply\n");
         Buffer buf(sizeof(struct ethernet_hdr) + sizeof(struct arp_hdr));
