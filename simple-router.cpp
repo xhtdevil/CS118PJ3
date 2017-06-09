@@ -57,7 +57,8 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
     struct ip_hdr* packIpHdr = (struct ip_hdr*) (packet.data() + sizeof(struct ethernet_hdr));
     // struct ip_hdr* ipHdr = (struct ip_hdr*) (packet.data() + sizeof(struct ethrnet_hdr));
     //ip checksum
-    print_hdr_ip(packet.data() + sizeof(struct ethernet_hdr));
+    m_arp.insertArpEntry(Buffer(packEthHdr->ether_shost,  packEthHdr->ether_shost + ETHER_ADDR_LEN), packIpHdr->ip_src);
+    // print_hdr_ip(packet.data() + sizeof(struct ethernet_hdr));
     uint16_t ipChecksum = ntohs(cksum((const void*)packIpHdr, sizeof(struct ip_hdr)));
     if(ipChecksum != 65535) {
       std::cout << "cksum : " << ipChecksum << std::endl;
@@ -87,7 +88,7 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
 
             }
             printf("-----------------------icmp to router. echo\n");
-            print_hdr_icmp(packet.data() + sizeof(struct ethernet_hdr) + sizeof(struct ip_hdr));
+            // print_hdr_icmp(packet.data() + sizeof(struct ethernet_hdr) + sizeof(struct ip_hdr));
             //construct the icmp echo reply pack
             Buffer buf(packet.size());
             memset(buf.data(), '\0', buf.size());
@@ -135,7 +136,7 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
             icmpHdr->icmp_sum = cksum((const void*) icmpHdr, buf.size() - sizeof(struct ethernet_hdr) - sizeof(struct ip_hdr));
             printf("---------------send icmp echo reply\n");
             print_hdrs(buf);
-            print_hdr_icmp(buf.data() + sizeof(ethernet_hdr) + sizeof(ip_hdr));
+            // print_hdr_icmp(buf.data() + sizeof(ethernet_hdr) + sizeof(ip_hdr));
             sendPacket(buf, inIface);
 
           }
@@ -169,12 +170,12 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
             ipHdr->ip_sum = 0;
             ipHdr->ip_sum = cksum((const void*) ipHdr, sizeof(struct ip_hdr));
 
-            icmpHdr->icmp_type = htons(3);
-            icmpHdr->icmp_code = htons(3);
+            icmpHdr->icmp_type = 3;
+            icmpHdr->icmp_code = 3;
             memcpy(icmpHdr->data, packIpHdr, ICMP_DATA_SIZE);
             icmpHdr->icmp_sum = 0;
             icmpHdr->icmp_sum = cksum((const void*) icmpHdr, sizeof(struct icmp_hdr));
-
+            print_hdrs(buf);
             sendPacket(buf, inIface);
           }
         // }
@@ -218,7 +219,7 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
           // memcpy(icmpHdr->data, packIpHdr, ICMP_DATA_SIZE);
           icmpHdr->icmp_sum = 0;
           icmpHdr->icmp_sum = cksum((const void*) icmpHdr, sizeof(struct icmp_hdr));
-
+          print_hdrs(buf);
           sendPacket(buf, inIface);
         }
         else {
@@ -266,28 +267,32 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
             printf("match in router table.\n");
             RoutingTableEntry entry = m_routingTable.lookup(packIpHdr->ip_dst);
             printf("--------------router entry found");
-            std::shared_ptr<ArpEntry> arpEntry = m_arp.lookup(entry.dest);
+            // printf("arp table:\n");
+            // m_arp.dump();
+            std::shared_ptr<ArpEntry> arpEntry = m_arp.lookup(entry.gw);
             if(arpEntry == nullptr) {
-              printf("-------------------Arp entry not in cache");
+              printf("-------------------Arp entry not in cache\n");
               // Buffer buf(packet.size());
-
-              m_arp.queueRequest(entry.dest, packet, entry.ifName);
+              printf("queue request\n");
+              m_arp.queueRequest(entry.gw, packet, entry.ifName);
             }
             else {
-              printf("-------------------Arp entry in cache");
+              printf("-------------------Arp entry in cache\n");
               Buffer buf(packet.size());
               memcpy(buf.data(), packet.data(), packet.size());
               struct ethernet_hdr* ethHdr = (struct ethernet_hdr*) buf.data();
-              // struct ip_hdr* ipHdr = (struct ip_hdr*) (buf.data() + sizeof(ethernet_hdr));
-
+              struct ip_hdr* ipHdr = (struct ip_hdr*) (buf.data() + sizeof(ethernet_hdr));
+              ipHdr->ip_ttl = ipHdr->ip_ttl - 1;
 
               //ethernet header filling
               memcpy(ethHdr->ether_dhost, (arpEntry->mac).data(), ETHER_ADDR_LEN);
               const Interface* interface = findIfaceByName(entry.ifName);
               memcpy(ethHdr->ether_shost, (interface->addr).data(), ETHER_ADDR_LEN);
               ethHdr->ether_type = htons(ethertype_ip);
-
-              sendPacket(buf, inIface);
+              ipHdr->ip_sum = 0;
+              ipHdr->ip_sum = cksum((void *)ipHdr, sizeof(struct ip_hdr));
+              print_hdrs(buf);
+              sendPacket(buf, entry.ifName);
             }
 
           }
@@ -336,7 +341,7 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
   else if(etherType == ethertype_arp ){
     printf("-----------------------------arp packet received\n");
     struct arp_hdr* packArpHdr = (struct arp_hdr*) (packet.data() + sizeof(struct ethernet_hdr));
-    print_hdr_arp(packet.data() + sizeof(struct ethernet_hdr));
+    // print_hdr_arp(packet.data() + sizeof(struct ethernet_hdr));
     // std::cout << "packArpHdr->arp_op" << ntohs(packArpHdr->arp_op) << std::endl;
     // std::cout << "arp_op_reply" << arp_op_reply << std::endl;
     if(ntohs(packArpHdr->arp_op) == arp_op_reply) {
@@ -348,8 +353,8 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
       printf("-----------------send all IPpack attached to the arp pack\n");
       for(const auto& ipPacket : arpRequest->packets) {
         Buffer ip_Packet = ipPacket.packet;
-        Buffer buf(sizeof(ip_Packet));
-        memcpy(buf.data(), ip_Packet.data(), sizeof(ip_Packet));
+        Buffer buf(ip_Packet.size());
+        memcpy(buf.data(), ip_Packet.data(), ip_Packet.size());
         struct ethernet_hdr* ethHdr = (struct ethernet_hdr*) buf.data();
         struct ip_hdr* ipHdr = (struct ip_hdr*) (buf.data() + sizeof(struct ethernet_hdr));
         //reduce ttl
@@ -357,10 +362,14 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
         //ethernet header changes
         memcpy(ethHdr->ether_dhost, arpHdr->arp_sha, ETHER_ADDR_LEN);
         memcpy(ethHdr->ether_shost, findIfaceByName(inIface)->addr.data(), ETHER_ADDR_LEN);
-        ethHdr->ether_type = htons(ethertype_arp);
-
+        ethHdr->ether_type = htons(ethertype_ip);
+        //calculate checksum again
+        ipHdr->ip_sum = 0;
+        ipHdr->ip_sum = cksum((void *)ipHdr, sizeof(struct ip_hdr));
+        print_hdrs(buf);
         sendPacket(buf, inIface);
       }
+      m_arp.removeRequest(arpRequest);
     }
     else if(ntohs(packArpHdr->arp_op) == arp_op_request) {
       printf("======================arprequest received\n");
@@ -368,6 +377,7 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
       struct ethernet_hdr* packEthHdr = (struct ethernet_hdr*) packet.data();
       struct arp_hdr* packArpHdr = (struct arp_hdr*)(packet.data() + sizeof(ethernet_hdr));
       // print_hdr_arp(packet.data() + sizeof(struct ethernet_hdr));
+      m_arp.insertArpEntry(Buffer(packEthHdr->ether_shost,  packEthHdr->ether_shost + ETHER_ADDR_LEN), packArpHdr->arp_sip);
       if(findIfaceByName(inIface)->ip == packArpHdr->arp_tip) {
         printf("request mac of router ------------------send arpreply\n");
         // std::shared_ptr<ArpRequest> arpRequest = m_arp.insertArpEntry((Buffer)packEthHdr->ether_shost, packIpHdr->ip_src);
@@ -387,7 +397,7 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
         memcpy(ethHdr->ether_dhost, packEthHdr->ether_shost, ETHER_ADDR_LEN);
         memcpy(ethHdr->ether_shost, (findIfaceByName(inIface)->addr).data(), ETHER_ADDR_LEN);
         ethHdr->ether_type = htons(ethertype_arp);
-        print_hdr_arp(buf.data() + sizeof(struct ethernet_hdr));
+        print_hdrs(buf);
         sendPacket(buf, inIface);
       }
     }
