@@ -39,7 +39,7 @@ RoutingTable::lookup(uint32_t ip) const
   uint32_t range, dest;
   uint32_t cur_longest_prefix = 0;
   // uint32_t matched_length = 0;
-  printf("2match in router table.\n");
+  // printf("2match in router table.\n");
   for(auto entry_ptr = m_entries.begin(); entry_ptr != m_entries.end(); ++entry_ptr){
     // range = std::to_string((*entry_ptr).dest & (*entry_ptr).mask);
     // dest = std::to_string(ip & (*entry_ptr).mask);

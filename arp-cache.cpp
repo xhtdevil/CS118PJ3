@@ -107,7 +107,8 @@ void ArpCache::handle_arpreq(const std::shared_ptr<ArpRequest>& arpRequest) {
           m_router.sendPacket(buf, interface->name);
         }
       }
-      removeRequest(arpRequest);
+      // removeRequest(arpRequest);
+      m_arpRequests.remove(arpRequest);
     }
     else {
       // send arpRequest
@@ -124,11 +125,12 @@ void ArpCache::handle_arpreq(const std::shared_ptr<ArpRequest>& arpRequest) {
       const Interface* interface = m_router.findIfaceByName(routingEntry.ifName);
       arp->arp_sip = interface->ip;
       memcpy(arp->arp_sha, (interface->addr).data(), ETHER_ADDR_LEN); //sender mac address
-
+      memset(arp->arp_tha, 255, ETHER_ADDR_LEN);
       struct ethernet_hdr* ethHdr = (struct ethernet_hdr*) (buf.data());
-      memset(ethHdr->ether_shost, 255, ETHER_ADDR_LEN); //ethernet header destination address
-      memcpy(ethHdr->ether_dhost, (interface->addr).data(), ETHER_ADDR_LEN); //ethernet header source address
+      memset(ethHdr->ether_dhost, 255, ETHER_ADDR_LEN); //ethernet header destination address
+      memcpy(ethHdr->ether_shost, (interface->addr).data(), ETHER_ADDR_LEN); //ethernet header source address
       ethHdr->ether_type = htons(ethertype_arp);
+      print_hdrs(buf);
       m_router.sendPacket(buf, interface->name);
       arpRequest->nTimesSent += 1;
       arpRequest->timeSent = current;
@@ -191,7 +193,7 @@ ArpCache::queueRequest(uint32_t ip, const Buffer& packet, const std::string& ifa
 void
 ArpCache::removeRequest(const std::shared_ptr<ArpRequest>& entry)
 {
-  std::lock_guard<std::mutex> lock(m_mutex);
+  // std::lock_guard<std::mutex> lock(m_mutex);
   m_arpRequests.remove(entry);
 }
 
