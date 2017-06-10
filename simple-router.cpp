@@ -83,7 +83,7 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
               printf("packet too small\n");
               exit(1);
             }
-            std::cout << "packet.size()" << packet.size() << std::endl;
+            // std::cout << "packet.size()" << packet.size() << std::endl;
             uint16_t icmpChecksum = ntohs(cksum((const void*)packIcmpHdr, packet.size() - sizeof(struct ethernet_hdr) - sizeof(struct ip_hdr)));
             if(icmpChecksum != 65535) {
               printf("icmpchecksum wrong!");
@@ -93,54 +93,65 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
             printf("-----------------------icmp to router. echo\n");
             // print_hdr_icmp(packet.data() + sizeof(struct ethernet_hdr) + sizeof(struct ip_hdr));
             //construct the icmp echo reply pack
-            Buffer buf(packet.size());
-            memset(buf.data(), '\0', buf.size());
-            struct ethernet_hdr* ethHdr = (struct ethernet_hdr*) buf.data();
+            RoutingTableEntry entry = m_routingTable.lookup(packIpHdr->ip_src);
+            std::shared_ptr<ArpEntry> arpEntry = m_arp.lookup(entry.gw);
+            if(arpEntry == nullptr) {
+              printf("-------------------Arp entry not in cache\n");
+              // Buffer buf(packet.size());
+              printf("queue request\n");
+              m_arp.queueRequest(entry.gw, packet, entry.ifName);
+            }
+            else {
+              Buffer buf(packet.size());
+              memset(buf.data(), '\0', buf.size());
+              struct ethernet_hdr* ethHdr = (struct ethernet_hdr*) buf.data();
 
-            //ethernet header filling
-            memcpy(ethHdr->ether_dhost, packEthHdr->ether_shost, ETHER_ADDR_LEN);
-            const Interface* interface = findIfaceByIp(packIpHdr->ip_dst);
-            memcpy(ethHdr->ether_shost, (interface->addr).data(), ETHER_ADDR_LEN);
-            ethHdr->ether_type = htons(ethertype_ip);
+              //ethernet header filling
+              memcpy(ethHdr->ether_dhost, packEthHdr->ether_shost, ETHER_ADDR_LEN);
+              const Interface* interface = findIfaceByIp(packIpHdr->ip_dst);
+              memcpy(ethHdr->ether_shost, (interface->addr).data(), ETHER_ADDR_LEN);
+              ethHdr->ether_type = htons(ethertype_ip);
 
-            //IP header filling
-            //htons
-            struct ip_hdr* ipHdr = (struct ip_hdr*) (buf.data() + sizeof(ethernet_hdr));
-            ipHdr->ip_v = packIpHdr->ip_v;
-            ipHdr->ip_hl = packIpHdr->ip_hl;
-            ipHdr->ip_tos = packIpHdr->ip_tos;
-            ipHdr->ip_len = packIpHdr->ip_len;
-            ipHdr->ip_id = packIpHdr->ip_id;
-            ipHdr->ip_off = packIpHdr->ip_off;
-            ipHdr->ip_ttl = DEFAULT_TTL;
-            ipHdr->ip_p = ip_protocol_icmp;
-            ipHdr->ip_src = packIpHdr->ip_dst;
-            ipHdr->ip_dst = packIpHdr->ip_src;
-            ipHdr->ip_sum = 0;
-            ipHdr->ip_sum = cksum((const void*) ipHdr, sizeof(struct ip_hdr));
+              //IP header filling
+              //htons
+              struct ip_hdr* ipHdr = (struct ip_hdr*) (buf.data() + sizeof(ethernet_hdr));
+              ipHdr->ip_v = packIpHdr->ip_v;
+              ipHdr->ip_hl = packIpHdr->ip_hl;
+              ipHdr->ip_tos = packIpHdr->ip_tos;
+              ipHdr->ip_len = packIpHdr->ip_len;
+              ipHdr->ip_id = packIpHdr->ip_id;
+              ipHdr->ip_off = packIpHdr->ip_off;
+              ipHdr->ip_ttl = DEFAULT_TTL;
+              ipHdr->ip_p = ip_protocol_icmp;
+              ipHdr->ip_src = packIpHdr->ip_dst;
+              ipHdr->ip_dst = packIpHdr->ip_src;
+              ipHdr->ip_sum = 0;
+              ipHdr->ip_sum = cksum((const void*) ipHdr, sizeof(struct ip_hdr));
 
-            //icmp filling
-            struct icmp_hdr* icmpHdr = (struct icmp_hdr*) (buf.data() + sizeof(ethernet_hdr) + sizeof(ip_hdr));
-            icmpHdr->icmp_type = 0;
-            icmpHdr->icmp_code = 0;// echo type and code
-            icmpHdr->icmp_sum = 0;
-            printf("copy icmp payload and seq, id\n");
-            int payloadLen = packet.size() - (sizeof(struct ethernet_hdr) + sizeof(struct ip_hdr) + sizeof(struct icmp_hdr));
-            if(payloadLen < 0) {
-              printf("bufsize wrong\n");
+              //icmp filling
+              struct icmp_hdr* icmpHdr = (struct icmp_hdr*) (buf.data() + sizeof(ethernet_hdr) + sizeof(ip_hdr));
+              icmpHdr->icmp_type = 0;
+              icmpHdr->icmp_code = 0;// echo type and code
+              icmpHdr->icmp_sum = 0;
+              printf("copy icmp payload and seq, id\n");
+              int payloadLen = packet.size() - (sizeof(struct ethernet_hdr) + sizeof(struct ip_hdr) + sizeof(struct icmp_hdr));
+              if(payloadLen < 0) {
+                printf("bufsize wrong\n");
 
-              std::cout << "packet size : " << packet.size() <<"  payload len : " << payloadLen << std::endl;
-              std::cout << "ethernet_hdr size : " << sizeof(struct ethernet_hdr) <<"  ip_hdr len : " << sizeof(struct ip_hdr) <<"  icmp_hdr len : " << sizeof(struct icmp_hdr) << std::endl;
-              exit(1);
+                std::cout << "packet size : " << packet.size() <<"  payload len : " << payloadLen << std::endl;
+                std::cout << "ethernet_hdr size : " << sizeof(struct ethernet_hdr) <<"  ip_hdr len : " << sizeof(struct ip_hdr) <<"  icmp_hdr len : " << sizeof(struct icmp_hdr) << std::endl;
+                exit(1);
+              }
+
+              memcpy(buf.data() + sizeof(struct ethernet_hdr) + sizeof(struct ip_hdr) + sizeof(struct icmp_hdr), packet.data() + sizeof(struct ethernet_hdr) + sizeof(struct ip_hdr) + sizeof(struct icmp_hdr), payloadLen);
+
+              icmpHdr->icmp_sum = cksum((const void*) icmpHdr, buf.size() - sizeof(struct ethernet_hdr) - sizeof(struct ip_hdr));
+              printf("---------------send icmp echo reply\n");
+              print_hdrs(buf);
+              // print_hdr_icmp(buf.data() + sizeof(ethernet_hdr) + sizeof(ip_hdr));
+              sendPacket(buf, inIface);
             }
 
-            memcpy(buf.data() + sizeof(struct ethernet_hdr) + sizeof(struct ip_hdr) + sizeof(struct icmp_hdr), packet.data() + sizeof(struct ethernet_hdr) + sizeof(struct ip_hdr) + sizeof(struct icmp_hdr), payloadLen);
-
-            icmpHdr->icmp_sum = cksum((const void*) icmpHdr, buf.size() - sizeof(struct ethernet_hdr) - sizeof(struct ip_hdr));
-            printf("---------------send icmp echo reply\n");
-            print_hdrs(buf);
-            // print_hdr_icmp(buf.data() + sizeof(ethernet_hdr) + sizeof(ip_hdr));
-            sendPacket(buf, inIface);
 
           }
           else {
@@ -191,7 +202,7 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
          uint8_t ttl = packIpHdr->ip_ttl - 1;
         if(ttl <= 0) {
           printf("---------------------------ICMP time excceed\n");
-          Buffer buf(sizeof(struct icmp_hdr) + sizeof(struct ip_hdr) + sizeof(struct ethernet_hdr) + ICMP_DATA_SIZE);
+          Buffer buf(4 + sizeof(struct icmp_hdr) + sizeof(struct ip_hdr) + sizeof(struct ethernet_hdr) + ICMP_DATA_SIZE);
           memset(buf.data(), '\0', buf.size());
           struct ethernet_hdr* ethHdr = (struct ethernet_hdr*) buf.data();
           struct ip_hdr* ipHdr = (struct ip_hdr*) (buf.data() + sizeof(ethernet_hdr));
@@ -209,7 +220,7 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
           ipHdr->ip_v = IPVERSION;
           ipHdr->ip_hl = IPHEADLEN;
           ipHdr->ip_tos = packIpHdr->ip_tos;
-          ipHdr->ip_len = htons(ICMP_DATA_SIZE + sizeof(struct ip_hdr) + sizeof(struct icmp_hdr));
+          ipHdr->ip_len = htons(4 + ICMP_DATA_SIZE + sizeof(struct ip_hdr) + sizeof(struct icmp_hdr));
           ipHdr->ip_id = packIpHdr->ip_id;
           ipHdr->ip_off = packIpHdr->ip_off;
           ipHdr->ip_ttl = DEFAULT_TTL;
@@ -221,11 +232,11 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
 
           icmpHdr->icmp_type = 11;
           icmpHdr->icmp_code = 0;
-          // memcpy(icmpHdr->data, packIpHdr, ICMP_DATA_SIZE);
+          memcpy(buf.data() + sizeof(ethernet_hdr) + sizeof(ip_hdr) + 8, packIpHdr, ICMP_DATA_SIZE);
           icmpHdr->icmp_sum = 0;
           icmpHdr->icmp_sum = cksum((const void*) icmpHdr, buf.size() - sizeof(struct ethernet_hdr) - sizeof(struct ip_hdr));
           print_hdrs(buf);
-          print_hdr_icmp((void * icmpHdr), sizeof(struct icmp_hdr))
+          // print_hdr_icmp(buf.data() + sizeof(ethernet_hdr) + sizeof(ip_hdr));
           sendPacket(buf, inIface);
         }
         else {
@@ -272,7 +283,7 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
           try {
             printf("match in router table.\n");
             RoutingTableEntry entry = m_routingTable.lookup(packIpHdr->ip_dst);
-            printf("--------------router entry found");
+            // printf("--------------router entry found");
             // printf("arp table:\n");
             // m_arp.dump();
             std::shared_ptr<ArpEntry> arpEntry = m_arp.lookup(entry.gw);
@@ -356,27 +367,29 @@ SimpleRouter::handlePacket(const Buffer& packet, const std::string& inIface)
       struct arp_hdr* arpHdr = (struct arp_hdr*)(packet.data() + sizeof(ethernet_hdr));
 
       std::shared_ptr<ArpRequest> arpRequest = m_arp.insertArpEntry(Buffer(packArpHdr->arp_sha,  packArpHdr->arp_sha + ETHER_ADDR_LEN), packArpHdr->arp_sip);
-      printf("-----------------send all IPpack attached to the arp pack\n");
-      for(const auto& ipPacket : arpRequest->packets) {
-        Buffer ip_Packet = ipPacket.packet;
-        Buffer buf(ip_Packet.size());
-        memcpy(buf.data(), ip_Packet.data(), ip_Packet.size());
-        struct ethernet_hdr* ethHdr = (struct ethernet_hdr*) buf.data();
-        struct ip_hdr* ipHdr = (struct ip_hdr*) (buf.data() + sizeof(struct ethernet_hdr));
-        //reduce ttl
-        ipHdr->ip_ttl = ipHdr->ip_ttl - 1;
-        //ethernet header changes
-        memcpy(ethHdr->ether_dhost, arpHdr->arp_sha, ETHER_ADDR_LEN);
-        memcpy(ethHdr->ether_shost, findIfaceByName(inIface)->addr.data(), ETHER_ADDR_LEN);
-        ethHdr->ether_type = htons(ethertype_ip);
-        //calculate checksum again
-        ipHdr->ip_sum = 0;
-        ipHdr->ip_sum = cksum((void *)ipHdr, sizeof(struct ip_hdr));
-        print_hdrs(buf);
-        sendPacket(buf, inIface);
-      }
+      if(arpRequest != nullptr) {
+        printf("-----------------send all IPpack attached to the arp pack\n");
+        for(const auto& ipPacket : arpRequest->packets) {
+          Buffer ip_Packet = ipPacket.packet;
+          Buffer buf(ip_Packet.size());
+          memcpy(buf.data(), ip_Packet.data(), ip_Packet.size());
+          struct ethernet_hdr* ethHdr = (struct ethernet_hdr*) buf.data();
+          struct ip_hdr* ipHdr = (struct ip_hdr*) (buf.data() + sizeof(struct ethernet_hdr));
+          //reduce ttl
+          ipHdr->ip_ttl = ipHdr->ip_ttl - 1;
+          //ethernet header changes
+          memcpy(ethHdr->ether_dhost, arpHdr->arp_sha, ETHER_ADDR_LEN);
+          memcpy(ethHdr->ether_shost, findIfaceByName(inIface)->addr.data(), ETHER_ADDR_LEN);
+          ethHdr->ether_type = htons(ethertype_ip);
+          //calculate checksum again
+          ipHdr->ip_sum = 0;
+          ipHdr->ip_sum = cksum((void *)ipHdr, sizeof(struct ip_hdr));
+          print_hdrs(buf);
+          sendPacket(buf, inIface);
+        }
 
-      m_arp.removeRequest(arpRequest);
+        m_arp.removeRequest(arpRequest);
+      }
     }
     else if(ntohs(packArpHdr->arp_op) == arp_op_request) {
       printf("======================arprequest received\n");

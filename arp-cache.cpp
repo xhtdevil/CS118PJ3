@@ -46,9 +46,11 @@ ArpCache::periodicCheckArpRequestsAndCacheEntries()
   }
   for (const auto& entry : m_cacheEntries) {
     if(!entry->isValid) {
+      printf("---------------------cacheEntries removed after 40s\n");
       //removeCached entry
       //why need to record and remove together?
       std::lock_guard<std::mutex> lock(m_mutex);
+      // removeRequest(entry);
       m_cacheEntries.remove(entry);
     }
   }
@@ -86,29 +88,29 @@ void ArpCache::handle_arpreq(const std::shared_ptr<ArpRequest>& arpRequest) {
 
           //IP header filling
           //htons
-          ipHdr->ip_hl = htons(IPHEADLEN);
-          ipHdr->ip_tos = htons(packIpHdr->ip_tos);
-          ipHdr->ip_len = htons(ICMP_DATA_SIZE + sizeof(struct ip_hdr));
-          ipHdr->ip_id = htons(packIpHdr->ip_id);
-          ipHdr->ip_off = htons(packIpHdr->ip_off);
-          ipHdr->ip_ttl = htons(DEFAULT_TTL);
-          ipHdr->ip_p = htons(ip_protocol_icmp);
-          ipHdr->ip_src = htons(interface->ip);
-          ipHdr->ip_dst = htons(packIpHdr->ip_src);
+          ipHdr->ip_hl = IPHEADLEN;
+          ipHdr->ip_tos = packIpHdr->ip_tos;
+          ipHdr->ip_len = htons(ICMP_DATA_SIZE + sizeof(struct icmp_t3_hdr) + sizeof(struct ip_hdr));
+          ipHdr->ip_id = packIpHdr->ip_id;
+          ipHdr->ip_off = packIpHdr->ip_off;
+          ipHdr->ip_ttl = DEFAULT_TTL;
+          ipHdr->ip_p = ip_protocol_icmp;
+          ipHdr->ip_src = interface->ip;
+          ipHdr->ip_dst = packIpHdr->ip_src;
           ipHdr->ip_sum = 0;
-          ipHdr->ip_sum = htons(cksum((const void*) ipHdr, sizeof(struct ip_hdr)));
+          ipHdr->ip_sum = cksum((const void*) ipHdr, sizeof(struct ip_hdr));
 
           icmpHdr->icmp_type = 3;
           icmpHdr->icmp_code = 1;
           memcpy(icmpHdr->data, packIpHdr, ICMP_DATA_SIZE);
           icmpHdr->icmp_sum = 0;
-          icmpHdr->icmp_sum = cksum((const void*) icmpHdr, sizeof(struct icmp_hdr));
-
+          icmpHdr->icmp_sum = cksum((const void*) icmpHdr, buf.size() - sizeof(struct ethernet_hdr) - sizeof(struct ip_hdr));
+          print_hdrs(buf);
           m_router.sendPacket(buf, interface->name);
         }
       }
-      // removeRequest(arpRequest);
-      m_arpRequests.remove(arpRequest);
+      removeRequest(arpRequest);
+      // m_arpRequests.remove(arpRequest);
     }
     else {
       // send arpRequest
@@ -193,7 +195,7 @@ ArpCache::queueRequest(uint32_t ip, const Buffer& packet, const std::string& ifa
 void
 ArpCache::removeRequest(const std::shared_ptr<ArpRequest>& entry)
 {
-  // std::lock_guard<std::mutex> lock(m_mutex);
+  std::lock_guard<std::mutex> lock(m_mutex);
   m_arpRequests.remove(entry);
 }
 
