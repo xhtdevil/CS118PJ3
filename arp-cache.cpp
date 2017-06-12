@@ -44,14 +44,14 @@ ArpCache::periodicCheckArpRequestsAndCacheEntries()
   for (const auto& arpRequest : m_arpRequests) {
     handle_arpreq(arpRequest);
   }
-  for (const auto& entry : m_cacheEntries) {
-    if(!entry->isValid) {
-      printf("---------------------cacheEntries removed after 40s\n");
+  for (auto entry = m_cacheEntries.begin(); entry != m_cacheEntries.end(); ++entry) {
+    if(!(*entry)->isValid) {
       //removeCached entry
       //why need to record and remove together?
-      std::lock_guard<std::mutex> lock(m_mutex);
       // removeRequest(entry);
-      m_cacheEntries.remove(entry);
+      //std::lock_guard<std::mutex> lock(m_mutex);
+      m_cacheEntries.erase(entry++);
+      printf("---------------------cacheEntries removed after 40s\n");
     }
   }
   // FILL THIS IN
@@ -230,6 +230,7 @@ ArpCache::clear()
 
   m_cacheEntries.clear();
   m_arpRequests.clear();
+
 }
 
 void
